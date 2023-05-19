@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 #include <random>
+#include <array>
 
 #include "fn.h"
 
@@ -52,7 +53,7 @@ std::string diff5(std::string str) {
 
 static void BM_eq(benchmark::State& state, fn fn, std::string const& challenge) {
     for (auto _ : state) {
-        benchmark::DoNotOptimize(fn(challenge, challenge));
+        (fn(challenge, challenge));
     }
 }
 
@@ -67,7 +68,7 @@ static void BM_diff(benchmark::State& state, fn fn, std::string const& challenge
 
     for (auto _ : state) {
         for (auto const& rhs : rhsList) {
-            benchmark::DoNotOptimize(fn(challenge, rhs));
+            (fn(challenge, rhs));
         }
     }
 }

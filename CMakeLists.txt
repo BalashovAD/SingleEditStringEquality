@@ -9,7 +9,7 @@ enable_testing()
 set(GTEST_DIR ${PROJECT_SOURCE_DIR}/thirdparty/googletest)
 add_subdirectory(${GTEST_DIR} ${CMAKE_BINARY_DIR}/googletest)
 
-add_executable(unit-tests test.cpp fn.cpp fn.h benchmark.cpp)
+add_executable(unit-tests test.cpp fn.cpp fn.h)
 target_link_libraries(unit-tests PRIVATE gtest gtest_main)
 target_include_directories(unit-tests PRIVATE
         ${GTEST_DIR}/googletest/include)
