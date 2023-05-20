@@ -26,7 +26,7 @@ public:
         test(lhs, rhs, false, current);
     }
 private:
-    std::string location(std::source_location current) const {
+    static std::string location(std::source_location current) noexcept {
         return std::string(current.file_name()) + ":" + std::to_string(current.line());
     }
 

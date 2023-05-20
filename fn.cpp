@@ -60,8 +60,8 @@ bool oneChange(std::string_view lhs, std::string_view rhs) noexcept {
     bool oneError = false;
 
     const auto slow = [&oneError](it lb, it le, it rb, it re) noexcept {
-        const auto size = le - lb;
-        const auto oneSizeLocal = re - rb - (le - lb);
+        const size_t size = re - rb;
+        const auto oneSizeLocal = (re - rb) == (le - lb);
         for (size_t i = 0; i != size; ++i) {
             if (lb[i + (oneError && !oneSizeLocal)] != rb[i]) {
                 if (std::exchange(oneError, true)) {
@@ -103,8 +103,8 @@ bool oneChangeSameSize(std::string_view lhs, std::string_view rhs) noexcept {
     bool oneError = false;
     const auto size = lhs.size();
     const auto slow = [&oneError](it lb, it le, it rb, it re) noexcept {
-        const auto size = le - lb;
-        const auto oneSizeLocal = re - rb - (le - lb);
+        const size_t size = re - rb;
+        const auto oneSizeLocal = (re - rb) == (le - lb);
         for (size_t i = 0; i != size; ++i) {
             if (lb[i + (oneError && !oneSizeLocal)] != rb[i]) {
                 if (std::exchange(oneError, true)) {
@@ -143,8 +143,8 @@ bool oneChangeDiffSize(std::string_view lhs, std::string_view rhs) noexcept {
     bool oneError = false;
     const auto minSize = rhs.size();
     const auto slow = [&oneError](it lb, it le, it rb, it re) noexcept {
-        const auto size = le - lb;
-        const auto oneSizeLocal = re - rb - (le - lb);
+        const size_t size = re - rb;
+        const auto oneSizeLocal = (re - rb) == (le - lb);
         for (size_t i = 0; i != size; ++i) {
             if (lb[i + (oneError && !oneSizeLocal)] != rb[i]) {
                 if (std::exchange(oneError, true)) {

@@ -74,11 +74,11 @@ static void BM_diff(benchmark::State& state, fn fn, std::string const& challenge
 }
 
 
-
 static inline std::string SHORT_CHALLENGE = gen(15);
 static inline std::string MID_CHALLENGE = gen(45);
 static inline std::string LONG_CHALLENGE = gen(16 * 80 + 5);
 static inline std::string INF_CHALLENGE = gen(1024 * 120);
+
 
 BENCHMARK_CAPTURE(BM_eq, EQ_short_slow, oneChangeSlow, SHORT_CHALLENGE);
 BENCHMARK_CAPTURE(BM_eq, EQ_short, oneChange, SHORT_CHALLENGE);
@@ -105,6 +105,7 @@ BENCHMARK_CAPTURE(BM_eq, EQ_long_split, oneChangeSplit, LONG_CHALLENGE);
 BENCHMARK_CAPTURE(BM_diff, DIFF_long_slow, oneChangeSlow, LONG_CHALLENGE);
 BENCHMARK_CAPTURE(BM_diff, DIFF_long, oneChange, LONG_CHALLENGE);
 BENCHMARK_CAPTURE(BM_diff, DIFF_long_split, oneChangeSplit, LONG_CHALLENGE);
+
 
 BENCHMARK_CAPTURE(BM_eq, EQ_inf_slow, oneChangeSlow, INF_CHALLENGE);
 BENCHMARK_CAPTURE(BM_eq, EQ_inf, oneChange, INF_CHALLENGE);

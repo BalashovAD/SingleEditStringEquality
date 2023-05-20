@@ -3,7 +3,9 @@ project(cmpString)
 
 set(CMAKE_CXX_STANDARD 20)
 
-set(CMAKE_CXX_FLAGS -march=native)
+set(CMAKE_CXX_FLAGS "-Werror -Wall -march=native")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+# Tests
 
 enable_testing()
 set(GTEST_DIR ${PROJECT_SOURCE_DIR}/thirdparty/googletest)
