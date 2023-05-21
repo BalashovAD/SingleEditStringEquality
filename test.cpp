@@ -40,6 +40,7 @@ private:
                 {prefix14, prefix14, "14-14"},
                 {"", prefix14, "0-14"},
                 {prefix14, "", "14-0"},
+                {prefix16, "", "16-0"},
         };
 
         for (auto const& [p, s, d] : testCases) {
@@ -80,3 +81,5 @@ TEST_P(OneChangeTest, Tests) {
 INSTANTIATE_TEST_SUITE_P(Slow, OneChangeTest, ::testing::Values(oneChangeSlow));
 INSTANTIATE_TEST_SUITE_P(Common, OneChangeTest, ::testing::Values(oneChange));
 INSTANTIATE_TEST_SUITE_P(Split, OneChangeTest, ::testing::Values(oneChangeSplit));
+INSTANTIATE_TEST_SUITE_P(Fast, OneChangeTest, ::testing::Values(oneChangeFast));
+INSTANTIATE_TEST_SUITE_P(NoSIMDFast, OneChangeTest, ::testing::Values(oneChangeNoSIMDFast));
