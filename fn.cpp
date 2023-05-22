@@ -252,7 +252,7 @@ bool oneChangeSplit(std::string_view lhs, std::string_view rhs) noexcept {
     }
 }
 
-bool slowF(bool& oneError, it lb, it le, it rb, it re) noexcept {
+bool slowF(bool oneError, it lb, it le, it rb, it re) noexcept {
     const size_t size = re - rb;
     const auto oneSizeLocal = (re - rb) == (le - lb);
     size_t i = 0;
@@ -267,7 +267,6 @@ bool slowF(bool& oneError, it lb, it le, it rb, it re) noexcept {
     const auto fnOneSizeNoError = [&]() {
         for (; i != size; ++i) {
             if (lb[i] != rb[i]) {
-                oneError = true;
                 ++i;
                 return fnOneSizeOneError();
             }
@@ -285,7 +284,6 @@ bool slowF(bool& oneError, it lb, it le, it rb, it re) noexcept {
     const auto fnDiffSizeNoError = [&]() {
         for (; i != size; ++i) {
             if (lb[i] != rb[i]) {
-                oneError = true;
                 return fnDiffSizeOneError();
             }
         }
@@ -312,7 +310,8 @@ bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
     bool oneError = false;
     const auto size = lhs.size();
 
-    for (size_t i = 0; i + 16 <= size; i += 16) {
+    size_t i = 0;
+    for (; i + 16 <= size; i += 16) {
         __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
         __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
         __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
@@ -327,8 +326,7 @@ bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
         }
     }
 
-    auto pos = size - (size % 16);
-    return slowF(oneError, lhs.data() + pos, lhs.end(), rhs.data() + pos, rhs.end());
+    return slowF(oneError, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
 }
 
 
@@ -338,7 +336,6 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
         return false;
     }
 
-    bool oneError = false;
     const auto minSize = rhs.size();
     size_t i = 0;
     const auto fnOneError = [&]() {
@@ -352,19 +349,18 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
                 return false;
             }
         }
-        auto pos = minSize - (minSize % 16);
-        return slowF(oneError, lhs.data() + pos + oneError, lhs.end(), rhs.data() + pos, rhs.end());
+        return slowF(true, lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end());
     };
 
     const auto fnNoError = [&]() {
         for (; i + 16 <= minSize; i += 16) {
-            __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i + oneError));
+            __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
             __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
             auto mask = _mm_movemask_epi8(cmpResult);
 
             if (mask != 0xffff) {
-                if (slowF(oneError, lhs.data() + i, lhs.data() + i + 16 + 1, rhs.data() + i, rhs.data() + i + 16)) {
+                if (slowF(false, lhs.data() + i, lhs.data() + i + 16 + 1, rhs.data() + i, rhs.data() + i + 16)) {
                     i += 16;
                     return fnOneError();
                 } else {
@@ -373,8 +369,8 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
             }
 
         }
-        auto pos = minSize - (minSize % 16);
-        return slowF(oneError, lhs.data() + pos + oneError, lhs.end(), rhs.data() + pos, rhs.end());
+
+        return slowF(false, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
     };
 
     return fnNoError();

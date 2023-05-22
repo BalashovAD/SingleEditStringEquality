@@ -79,7 +79,7 @@ TEST_P(OneChangeTest, Tests) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Slow, OneChangeTest, ::testing::Values(oneChangeSlow));
+INSTANTIATE_TEST_SUITE_P(NoSIMDFast, OneChangeTest, ::testing::Values(oneChangeNoSIMDFast));
 INSTANTIATE_TEST_SUITE_P(Common, OneChangeTest, ::testing::Values(oneChange));
 INSTANTIATE_TEST_SUITE_P(Split, OneChangeTest, ::testing::Values(oneChangeSplit));
 INSTANTIATE_TEST_SUITE_P(Fast, OneChangeTest, ::testing::Values(oneChangeFast));
-INSTANTIATE_TEST_SUITE_P(NoSIMDFast, OneChangeTest, ::testing::Values(oneChangeNoSIMDFast));
