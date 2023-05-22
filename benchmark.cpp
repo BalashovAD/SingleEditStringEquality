@@ -55,6 +55,10 @@ static void BM_eq(benchmark::State& state, fn fn, std::string const& challenge) 
     for (auto _ : state) {
         (fn(challenge, challenge));
     }
+
+    if (fn(challenge, challenge) != oneChangeSlow(challenge, challenge)) {
+	throw std::runtime_error("Wrong answer eq");
+    }
 }
 
 using DiffFn = std::string(*)(std::string);
@@ -70,6 +74,11 @@ static void BM_diff(benchmark::State& state, fn fn, std::string const& challenge
         for (auto const& rhs : rhsList) {
             (fn(challenge, rhs));
         }
+    }
+    for (auto const& rhs : rhsList) {
+        if (fn(challenge, rhs) != oneChangeSlow(challenge, rhs)) {
+	    throw std::runtime_error("Wrong answer diff");
+	}
     }
 }
 
