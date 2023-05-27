@@ -12,6 +12,9 @@ class OneChangeTest : public ::testing::TestWithParam<fn> {
 public:
     static constexpr sv prefix15 = "aqzwsxedcrfvrfv";
     static constexpr sv prefix16 = "aqzwsxedcrfvrfva";
+    static constexpr sv prefix32 = "aqzwsxedcaqzwsxedcrfvrfvarfvrfva";
+    static constexpr sv prefix31 = "aqzwsedcaqzwsxedcrfvrfvarfvrfva";
+    static constexpr sv prefix33 = "aqzwsedcaqzwsxedcrfvrfv2arfvrfva";
     static constexpr sv prefix14 = "zwsxedc1rfvrfv";
 
     void SetUp() override {
@@ -41,6 +44,12 @@ private:
                 {"", prefix14, "0-14"},
                 {prefix14, "", "14-0"},
                 {prefix16, "", "16-0"},
+                {prefix32, prefix32, "32-32"},
+                {prefix32, "", "32-0"},
+                {prefix31, "", "31-0"},
+                {prefix31, prefix33, "31-33"},
+                {prefix33, prefix33, "33-33"},
+                {"", prefix33, "0-33"},
         };
 
         for (auto const& [p, s, d] : testCases) {
@@ -55,7 +64,6 @@ private:
 
 
 TEST_P(OneChangeTest, Tests) {
-    // abcd abd
     tt("abc", "abc");
     tt("abc", "abb");
     tt("abecd", "abcd");
@@ -81,5 +89,48 @@ TEST_P(OneChangeTest, Tests) {
 INSTANTIATE_TEST_SUITE_P(Slow, OneChangeTest, ::testing::Values(oneChangeSlow));
 INSTANTIATE_TEST_SUITE_P(NoSIMDFast, OneChangeTest, ::testing::Values(oneChangeNoSIMDFast));
 INSTANTIATE_TEST_SUITE_P(Common, OneChangeTest, ::testing::Values(oneChange));
-INSTANTIATE_TEST_SUITE_P(Split, OneChangeTest, ::testing::Values(oneChangeSplit));
+INSTANTIATE_TEST_SUITE_P(CommonAVX, OneChangeTest, ::testing::Values(oneChangeAVX));
 INSTANTIATE_TEST_SUITE_P(Fast, OneChangeTest, ::testing::Values(oneChangeFast));
+INSTANTIATE_TEST_SUITE_P(FastAVX, OneChangeTest, ::testing::Values(oneChangeFastAVX));
+
+TEST(Movemask, Eq128) {
+    __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttttttttttttt"));
+    __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttttttttttttt"));
+    __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
+    unsigned int mask = _mm_movemask_epi8(cmpResult);
+    EXPECT_EQ(mask, 0x0000FFFF);
+    EXPECT_EQ(std::popcount(mask), 16);
+    EXPECT_EQ(popcount(cmpResult), 128);
+}
+
+TEST(Movemask, Ne128) {
+    __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttftttttttttt"));
+    __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttttttttttttt"));
+    __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
+    unsigned int mask = _mm_movemask_epi8(cmpResult);
+    EXPECT_NE(mask, 0x0000FFFF);
+    EXPECT_EQ(std::popcount(mask), 15);
+    EXPECT_EQ(popcount(cmpResult), 128 - 8);
+}
+
+
+TEST(Movemask, Eq256) {
+    __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>("ttttyyyyyyyyttttttttttttyyyyyyyy"));
+    __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>("ttttyyyyyyyyttttttttttttyyyyyyyy"));
+    __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
+    unsigned int mask = _mm256_movemask_epi8(cmpResult);
+    EXPECT_EQ(mask, 0xFFFFFFFF);
+    EXPECT_EQ(std::popcount(mask), 32);
+//    EXPECT_EQ(popcount(cmpResult), 256);
+}
+
+TEST(Movemask, Ne256) {
+    __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>("ttttyyyyyyyyttttttttttttyyyyyyyy"));
+    __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>("ttttyyyyyyyyttxtttttttttyyyyyyyy"));
+    __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
+    unsigned int mask = _mm256_movemask_epi8(cmpResult);
+    EXPECT_NE(mask, 0xFFFFFFFF);
+    EXPECT_EQ(std::popcount(mask), 31);
+//    EXPECT_EQ(popcount(cmpResult), 256 - 8);
+}
+

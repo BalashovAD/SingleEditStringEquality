@@ -80,56 +80,21 @@ static inline std::string LONG_CHALLENGE = gen(16 * 80 + 5);
 static inline std::string INF_CHALLENGE = gen(1024 * 120);
 
 
-BENCHMARK_CAPTURE(BM_eq, EQ_short_slow, oneChangeSlow, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_short_no_simd_fast, oneChangeNoSIMDFast, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_short, oneChange, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_short_split, oneChangeSplit, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_short_fast, oneChangeFast, SHORT_CHALLENGE);
+#define DEF_BENCH(name, fn) \
+BENCHMARK_CAPTURE(BM_eq, EQ_short_ ## name, fn, SHORT_CHALLENGE); \
+BENCHMARK_CAPTURE(BM_diff, DIFF_short_ ## name, fn, SHORT_CHALLENGE);\
+BENCHMARK_CAPTURE(BM_eq, EQ_mid_ ## name, fn, MID_CHALLENGE);\
+BENCHMARK_CAPTURE(BM_diff, DIFF_mid_ ## name, fn, MID_CHALLENGE);\
+BENCHMARK_CAPTURE(BM_eq, EQ_long_ ## name, fn, LONG_CHALLENGE);\
+BENCHMARK_CAPTURE(BM_diff, DIFF_long_ ## name, fn, LONG_CHALLENGE);\
+BENCHMARK_CAPTURE(BM_eq, EQ_inf_ ## name, fn, INF_CHALLENGE);\
+BENCHMARK_CAPTURE(BM_diff, DIFF_inf_ ## name, fn, INF_CHALLENGE);
 
-BENCHMARK_CAPTURE(BM_diff, DIFF_short_slow, oneChangeSlow, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_short_no_simd_fast, oneChangeNoSIMDFast, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_short, oneChange, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_short_split, oneChangeSplit, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_short_fast, oneChangeFast, SHORT_CHALLENGE);
-
-
-BENCHMARK_CAPTURE(BM_eq, EQ_mid_slow, oneChangeSlow, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_mid_no_simd_fast, oneChangeNoSIMDFast, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_mid, oneChange, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_mid_split, oneChangeSplit, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_mid_fast, oneChangeFast, MID_CHALLENGE);
-
-BENCHMARK_CAPTURE(BM_diff, DIFF_mid_slow, oneChangeSlow, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_mid_no_simd_fast, oneChangeNoSIMDFast, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_mid, oneChange, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_mid_split, oneChangeSplit, MID_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_mid_fast, oneChangeFast, MID_CHALLENGE);
-
-
-BENCHMARK_CAPTURE(BM_eq, EQ_long_slow, oneChangeSlow, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_long_no_simd_fast, oneChangeNoSIMDFast, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_long, oneChange, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_long_split, oneChangeSplit, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_long_fast, oneChangeFast, LONG_CHALLENGE);
-
-BENCHMARK_CAPTURE(BM_diff, DIFF_long_slow, oneChangeSlow, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_long_no_simd_fast, oneChangeNoSIMDFast, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_long, oneChange, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_long_split, oneChangeSplit, LONG_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_long_fast, oneChangeFast, LONG_CHALLENGE);
-
-
-BENCHMARK_CAPTURE(BM_eq, EQ_inf_slow, oneChangeSlow, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_inf_no_simd_fast, oneChangeNoSIMDFast, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_inf, oneChange, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_inf_split, oneChangeSplit, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_eq, EQ_inf_fast, oneChangeFast, INF_CHALLENGE);
-
-BENCHMARK_CAPTURE(BM_diff, DIFF_inf_slow, oneChangeSlow, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_inf_no_simd_fast, oneChangeNoSIMDFast, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_inf, oneChange, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_inf_split, oneChangeSplit, INF_CHALLENGE);
-BENCHMARK_CAPTURE(BM_diff, DIFF_inf_fast, oneChangeFast, INF_CHALLENGE);
-
+DEF_BENCH(slow, oneChangeSlow);
+DEF_BENCH(fast, oneChangeNoSIMDFast);
+DEF_BENCH(sse, oneChange);
+DEF_BENCH(avx, oneChangeAVX);
+DEF_BENCH(sseFast, oneChangeFast);
+DEF_BENCH(avxFast, oneChangeFastAVX);
 
 BENCHMARK_MAIN();

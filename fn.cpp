@@ -2,6 +2,8 @@
 #include <utility>
 #include <immintrin.h>
 #include <cassert>
+#include <bit>
+
 
 using it = std::string_view::const_iterator;
 
@@ -94,8 +96,7 @@ bool oneChangeNoSIMDFast(std::string_view lhs, std::string_view rhs) noexcept {
     }
 }
 
-
-unsigned popcount(__m128i v) {
+unsigned popcount(__m128i v) noexcept {
     const __m128i lookup = _mm_setr_epi8(
             /* 0 */ 0, /* 1 */ 1, /* 2 */ 1, /* 3 */ 2,
             /* 4 */ 1, /* 5 */ 2, /* 6 */ 2, /* 7 */ 3,
@@ -109,6 +110,42 @@ unsigned popcount(__m128i v) {
     __m128i popcnt2 = _mm_shuffle_epi8(lookup, hi);
     auto result = _mm_sad_epu8(_mm_add_epi8(popcnt1, popcnt2), _mm_setzero_si128());
     return _mm_extract_epi64(result, 0) + _mm_extract_epi64(result, 1);
+}
+
+
+unsigned popcount(__m256i v) noexcept {
+    const __m256i mask1 = _mm256_set1_epi64x(0x5555555555555555LL);
+    const __m256i mask2 = _mm256_set1_epi64x(0x3333333333333333LL);
+    const __m256i mask3 = _mm256_set1_epi64x(0x0F0F0F0F0F0F0F0FLL);
+    const __m256i mask4 = _mm256_set1_epi64x(0x00FF00FF00FF00FFLL);
+    const __m256i mask5 = _mm256_set1_epi64x(0x0000FFFF0000FFFFLL);
+    const __m256i mask6 = _mm256_set1_epi64x(0x00000000FFFFFFFFLL);
+
+    v = _mm256_sub_epi64(v, _mm256_and_si256(_mm256_srli_epi64(v, 1), mask1));
+    v = _mm256_add_epi64(_mm256_and_si256(v, mask2), _mm256_and_si256(_mm256_srli_epi64(v, 2), mask2));
+    v = _mm256_and_si256(_mm256_add_epi64(v, _mm256_srli_epi64(v, 4)), mask3);
+    v = _mm256_add_epi64(_mm256_and_si256(v, mask4), _mm256_and_si256(_mm256_srli_epi64(v, 8), mask4));
+    v = _mm256_add_epi64(_mm256_and_si256(v, mask5), _mm256_and_si256(_mm256_srli_epi64(v, 16), mask5));
+    v = _mm256_add_epi64(_mm256_and_si256(v, mask6), _mm256_and_si256(_mm256_srli_epi64(v, 32), mask6));
+
+    unsigned long long count =
+            _mm256_extract_epi64(v, 0) +
+            _mm256_extract_epi64(v, 1) +
+            _mm256_extract_epi64(v, 2) +
+            _mm256_extract_epi64(v, 3);
+
+    return count;
+}
+
+unsigned countOfErrors(__m128i v) noexcept {
+    unsigned mask = _mm_movemask_epi8(v);
+    return 16 - std::popcount(mask);
+}
+
+
+unsigned countOfErrors(__m256i v) noexcept {
+    unsigned mask = _mm256_movemask_epi8(v);
+    return 32 - std::popcount(mask);
 }
 
 
@@ -145,7 +182,7 @@ bool oneChange(std::string_view lhs, std::string_view rhs) noexcept {
         __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i + (oneError && !oneSize)));
         __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
         __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
-        auto count = (128 - popcount(cmpResult)) / 8;
+        auto count = countOfErrors(cmpResult);
 
         if (count != 0) {
             if (oneError || (oneSize && count > 1)) {
@@ -165,49 +202,20 @@ bool oneChange(std::string_view lhs, std::string_view rhs) noexcept {
 }
 
 
-bool oneChangeSameSize(std::string_view lhs, std::string_view rhs) noexcept {
-    assert(lhs.size() == rhs.size());
-    bool oneError = false;
-    const auto size = lhs.size();
-    const auto slow = [&oneError](it lb, it le, it rb, it re) noexcept {
-        const size_t size = re - rb;
-        const auto oneSizeLocal = (re - rb) == (le - lb);
-        for (size_t i = 0; i != size; ++i) {
-            if (lb[i + (oneError && !oneSizeLocal)] != rb[i]) {
-                if (std::exchange(oneError, true)) {
-                    return false;
-                }
-                i -= !oneSizeLocal;
-            }
-        }
-        return true;
-    };
-
-    for (size_t i = 0; i + 16 <= size; i += 16) {
-        __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
-        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
-        __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
-        auto count = (128 - popcount(cmpResult)) / 8;
-
-        if (count != 0) {
-            if (count > 1 || std::exchange(oneError, true)) {
-                return false;
-            }
-        }
+bool oneChangeAVX(std::string_view lhs, std::string_view rhs) noexcept {
+    if (lhs.size() < rhs.size()) {
+        return oneChange(rhs, lhs);
     }
 
-    auto pos = size - (size % 16);
-    return slow(lhs.data() + pos, lhs.end(), rhs.data() + pos, rhs.end());
-}
-
-bool oneChangeDiffSize(std::string_view lhs, std::string_view rhs) noexcept {
-    assert(lhs.size() > rhs.size());
-    if (lhs.size() - rhs.size() != 1) {
+    const auto maxSize = lhs.size();
+    const auto minSize = rhs.size();
+    if (maxSize - minSize > 1) {
         return false;
     }
 
+    const bool oneSize = maxSize == minSize;
     bool oneError = false;
-    const auto minSize = rhs.size();
+
     const auto slow = [&oneError](it lb, it le, it rb, it re) noexcept {
         const size_t size = re - rb;
         const auto oneSizeLocal = (re - rb) == (le - lb);
@@ -222,35 +230,30 @@ bool oneChangeDiffSize(std::string_view lhs, std::string_view rhs) noexcept {
         return true;
     };
 
-    for (size_t i = 0; i + 16 <= minSize; i += 16) {
-        __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i + oneError));
-        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
-        __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
-        auto count = (128 - popcount(cmpResult)) / 8;
+
+    for (size_t i = 0; i + 32 <= minSize; i += 32) {
+        __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i + (oneError && !oneSize)));
+        __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
+        __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
+        auto count = countOfErrors(cmpResult);
 
         if (count != 0) {
-            if (oneError
-                    || (!slow(lhs.data() + i, lhs.data() + i + 16 + 1, rhs.data() + i, rhs.data() + i + 16)
-                    || (--i, false))) {
+            if (oneError || (oneSize && count > 1)) {
+                return false;
+            } else if (count == 1 && oneSize) {
+                oneError = true;
+            } else if (!slow(lhs.data() + i, lhs.data() + i + 32 + 1, rhs.data() + i, rhs.data() + i + 32)
+                       || (--i, false)) {
+                // count > 1 && different size
                 return false;
             }
         }
     }
 
-    auto pos = minSize - (minSize % 16);
-    return slow(lhs.data() + pos + oneError, lhs.end(), rhs.data() + pos, rhs.end());
-}
+    auto pos = minSize - (minSize % 32);
+    return slow(lhs.data() + pos + (oneError && !oneSize), lhs.end(), rhs.data() + pos, rhs.end());
+};
 
-
-bool oneChangeSplit(std::string_view lhs, std::string_view rhs) noexcept {
-    if (lhs.size() == rhs.size()) {
-        return oneChangeSameSize(lhs, rhs);
-    } else if (lhs.size() < rhs.size()) {
-        return oneChangeDiffSize(rhs, lhs);
-    } else {
-        return oneChangeDiffSize(lhs, rhs);
-    }
-}
 
 bool slowF(bool oneError, it lb, it le, it rb, it re) noexcept {
     const size_t size = re - rb;
@@ -302,7 +305,7 @@ bool slowF(bool oneError, it lb, it le, it rb, it re) noexcept {
             return fnDiffSizeNoError();
         }
     }
-};
+}
 
 
 bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept {
@@ -315,11 +318,9 @@ bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
         __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
         __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
         __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
-        auto mask = _mm_movemask_epi8(cmpResult);
+        auto count = countOfErrors(cmpResult);
 
-        if (mask != 0xffff) {
-            auto count = (128 - popcount(cmpResult)) / 8;
-
+        if (count != 0) {
             if (count > 1 || std::exchange(oneError, true)) {
                 return false;
             }
@@ -343,9 +344,9 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
             __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i + 1));
             __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
-            auto mask = _mm_movemask_epi8(cmpResult);
+            int mask = _mm_movemask_epi8(cmpResult);
 
-            if (mask != 0xffff) {
+            if (mask != 0x0000ffff) {
                 return false;
             }
         }
@@ -357,9 +358,9 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
             __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
             __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
-            auto mask = _mm_movemask_epi8(cmpResult);
+            int mask = _mm_movemask_epi8(cmpResult);
 
-            if (mask != 0xffff) {
+            if (mask != 0x0000ffff) {
                 if (slowF(false, lhs.data() + i, lhs.data() + i + 16 + 1, rhs.data() + i, rhs.data() + i + 16)) {
                     i += 16;
                     return fnOneError();
@@ -383,5 +384,85 @@ bool oneChangeFast(std::string_view lhs, std::string_view rhs) noexcept {
         return oneChangeDiffSizeFast(rhs, lhs);
     } else {
         return oneChangeDiffSizeFast(lhs, rhs);
+    }
+}
+
+
+bool oneChangeSameSizeFastAVX(std::string_view lhs, std::string_view rhs) noexcept {
+    assert(lhs.size() == rhs.size());
+    bool oneError = false;
+    const auto size = lhs.size();
+
+    size_t i = 0;
+    for (; i + 16 <= size; i += 16) {
+        __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
+        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
+        __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
+        auto count = countOfErrors(cmpResult);
+
+        if (count != 0) {
+            if (count > 1 || std::exchange(oneError, true)) {
+                return false;
+            }
+        }
+    }
+
+    return slowF(oneError, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
+}
+
+
+bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexcept {
+    assert(lhs.size() > rhs.size());
+    if (lhs.size() - rhs.size() != 1) {
+        return false;
+    }
+
+    const auto minSize = rhs.size();
+    size_t i = 0;
+    const auto fnOneError = [&]() {
+        for (; i + 32 <= minSize; i += 32) {
+            __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i + 1));
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
+            __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
+            unsigned int mask = _mm256_movemask_epi8(cmpResult);
+
+            if (mask != 0xffffffff) {
+                return false;
+            }
+        }
+        return slowF(true, lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end());
+    };
+
+    const auto fnNoError = [&]() {
+        for (; i + 32 <= minSize; i += 32) {
+            __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i));
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
+            __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
+            unsigned int mask = _mm256_movemask_epi8(cmpResult);
+
+            if (mask != 0xffffffff) {
+                if (slowF(false, lhs.data() + i, lhs.data() + i + 32 + 1, rhs.data() + i, rhs.data() + i + 32)) {
+                    i += 16;
+                    return fnOneError();
+                } else {
+                    return false;
+                }
+            }
+
+        }
+
+        return slowF(false, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
+    };
+
+    return fnNoError();
+}
+
+bool oneChangeFastAVX(std::string_view lhs, std::string_view rhs) noexcept {
+    if (lhs.size() == rhs.size()) {
+        return oneChangeSameSizeFastAVX(lhs, rhs);
+    } else if (lhs.size() < rhs.size()) {
+        return oneChangeDiffSizeFastAVX(rhs, lhs);
+    } else {
+        return oneChangeDiffSizeFastAVX(lhs, rhs);
     }
 }
