@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 #include <random>
 #include <array>
+#include <stdexcept>
 
 #include "fn.h"
 
@@ -50,6 +51,11 @@ std::string diff5(std::string str) {
     return '!' + str;
 }
 
+std::string diff6(std::string str) {
+    return '!' + str + '!';
+}
+
+static constexpr size_t DIFF_COUNT = 6;
 
 static void BM_eq(benchmark::State& state, fn fn, std::string const& challenge) {
     for (auto _ : state) {
@@ -57,14 +63,13 @@ static void BM_eq(benchmark::State& state, fn fn, std::string const& challenge) 
     }
 
     if (fn(challenge, challenge) != oneChangeSlow(challenge, challenge)) {
-	throw std::runtime_error("Wrong answer eq");
+	    throw std::runtime_error("Wrong answer eq");
     }
 }
 
 using DiffFn = std::string(*)(std::string);
 static void BM_diff(benchmark::State& state, fn fn, std::string const& challenge) {
-    static constexpr size_t DIFF_COUNT = 5;
-    auto diffList = std::array<DiffFn, DIFF_COUNT>{diff1, diff2, diff3, diff4, diff5};
+    auto diffList = std::array<DiffFn, DIFF_COUNT>{diff1, diff2, diff3, diff4, diff5, diff6};
     std::array<std::string, DIFF_COUNT> rhsList;
     for (auto i = 0; i != DIFF_COUNT; ++i) {
         rhsList[i] = diffList[i](challenge);
@@ -77,16 +82,16 @@ static void BM_diff(benchmark::State& state, fn fn, std::string const& challenge
     }
     for (auto const& rhs : rhsList) {
         if (fn(challenge, rhs) != oneChangeSlow(challenge, rhs)) {
-	    throw std::runtime_error("Wrong answer diff");
-	}
+            throw std::runtime_error("Wrong answer diff");
+        }
     }
 }
 
 
 static inline std::string SHORT_CHALLENGE = gen(15);
 static inline std::string MID_CHALLENGE = gen(45);
-static inline std::string LONG_CHALLENGE = gen(16 * 80 + 5);
-static inline std::string INF_CHALLENGE = gen(1024 * 120);
+static inline std::string LONG_CHALLENGE = gen(16 * 80 + 5); // 1285
+static inline std::string INF_CHALLENGE = gen(1024 * 120); // 120 Kb
 
 
 #define DEF_BENCH(name, fn) \

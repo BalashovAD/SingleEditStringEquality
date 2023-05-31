@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <source_location>
+#include <bitset>
 
 #include "fn.h"
 
@@ -16,6 +17,8 @@ public:
     static constexpr sv prefix31 = "aqzwsedcaqzwsxedcrfvrfvarfvrfva";
     static constexpr sv prefix33 = "aqzwsedcaqzwsxedcrfvrfv2arfvrfva";
     static constexpr sv prefix14 = "zwsxedc1rfvrfv";
+    static constexpr sv prefix13 = "zwsxec1rfvrfv";
+    static constexpr sv prefix12 = "zwxec1rfvrfv";
 
     void SetUp() override {
         m_pFn = GetParam();
@@ -41,6 +44,8 @@ private:
                 {prefix16, prefix15, "16-15"},
                 {prefix16, prefix16, "16-16"},
                 {prefix14, prefix14, "14-14"},
+                {prefix13, prefix14, "13-14"},
+                {prefix12, prefix14, "12-14"},
                 {"", prefix14, "0-14"},
                 {prefix14, "", "14-0"},
                 {prefix16, "", "16-0"},
@@ -76,6 +81,8 @@ TEST_P(OneChangeTest, Tests) {
     tt("aaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaa" "a");
 
     tf("abc", "bbb");
+    tf("aaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb");
+    tf("aaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb");
     tf("abc", "bb");
     tf("abc", "cc");
     tf("a", "aaa");
@@ -93,6 +100,11 @@ INSTANTIATE_TEST_SUITE_P(CommonAVX, OneChangeTest, ::testing::Values(oneChangeAV
 INSTANTIATE_TEST_SUITE_P(Fast, OneChangeTest, ::testing::Values(oneChangeFast));
 INSTANTIATE_TEST_SUITE_P(FastAVX, OneChangeTest, ::testing::Values(oneChangeFastAVX));
 
+void printInBinary(unsigned int num) {
+    std::bitset<32> binary(num);  // assuming 32-bit unsigned int
+    std::cout << binary << std::endl;
+}
+
 TEST(Movemask, Eq128) {
     __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttttttttttttt"));
     __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttttttttttttt"));
@@ -104,13 +116,19 @@ TEST(Movemask, Eq128) {
 }
 
 TEST(Movemask, Ne128) {
-    __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttftttttttttt"));
+    __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tftttttttttttttt"));
     __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>("tttttttttttttttt"));
     __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
     unsigned int mask = _mm_movemask_epi8(cmpResult);
     EXPECT_NE(mask, 0x0000FFFF);
     EXPECT_EQ(std::popcount(mask), 15);
     EXPECT_EQ(popcount(cmpResult), 128 - 8);
+    printInBinary(mask);
+    auto revMask = ~mask;
+    printInBinary(revMask);
+    auto firstError = _tzcnt_u32(revMask);
+    std::cout << firstError << std::endl;
+    EXPECT_EQ(firstError, 1);
 }
 
 
@@ -121,7 +139,6 @@ TEST(Movemask, Eq256) {
     unsigned int mask = _mm256_movemask_epi8(cmpResult);
     EXPECT_EQ(mask, 0xFFFFFFFF);
     EXPECT_EQ(std::popcount(mask), 32);
-//    EXPECT_EQ(popcount(cmpResult), 256);
 }
 
 TEST(Movemask, Ne256) {
@@ -131,6 +148,8 @@ TEST(Movemask, Ne256) {
     unsigned int mask = _mm256_movemask_epi8(cmpResult);
     EXPECT_NE(mask, 0xFFFFFFFF);
     EXPECT_EQ(std::popcount(mask), 31);
-//    EXPECT_EQ(popcount(cmpResult), 256 - 8);
+    auto revMask = ~mask;
+    auto firstError = _tzcnt_u32(revMask);
+    EXPECT_EQ(firstError, 14);
 }
 

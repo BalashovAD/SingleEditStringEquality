@@ -148,6 +148,10 @@ unsigned countOfErrors(__m256i v) noexcept {
     return 32 - std::popcount(mask);
 }
 
+unsigned findFirstError(unsigned int mask) noexcept {
+    return _tzcnt_u32(~mask);
+}
+
 
 bool oneChange(std::string_view lhs, std::string_view rhs) noexcept {
     if (lhs.size() < rhs.size()) {
@@ -320,7 +324,7 @@ bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
         __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
         auto count = countOfErrors(cmpResult);
 
-        if (count != 0) {
+        if (count != 0) [[unlikely]] {
             if (count > 1 || std::exchange(oneError, true)) {
                 return false;
             }
@@ -346,7 +350,7 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
             int mask = _mm_movemask_epi8(cmpResult);
 
-            if (mask != 0x0000ffff) {
+            if (mask != 0x0000ffff) [[unlikely]] {
                 return false;
             }
         }
@@ -360,13 +364,10 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
             int mask = _mm_movemask_epi8(cmpResult);
 
-            if (mask != 0x0000ffff) {
-                if (slowF(false, lhs.data() + i, lhs.data() + i + 16 + 1, rhs.data() + i, rhs.data() + i + 16)) {
-                    i += 16;
-                    return fnOneError();
-                } else {
-                    return false;
-                }
+            if (mask != 0x0000ffff) [[unlikely]] {
+                auto firstError = findFirstError(mask);
+                i += firstError;
+                return fnOneError();
             }
 
         }
@@ -394,13 +395,13 @@ bool oneChangeSameSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
     const auto size = lhs.size();
 
     size_t i = 0;
-    for (; i + 16 <= size; i += 16) {
-        __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
-        __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
-        __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
+    for (; i + 32 <= size; i += 32) {
+        __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i));
+        __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
+        __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
         auto count = countOfErrors(cmpResult);
 
-        if (count != 0) {
+        if (count != 0) [[unlikely]] {
             if (count > 1 || std::exchange(oneError, true)) {
                 return false;
             }
@@ -426,7 +427,7 @@ bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
             __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
             unsigned int mask = _mm256_movemask_epi8(cmpResult);
 
-            if (mask != 0xffffffff) {
+            if (mask != 0xffffffff) [[unlikely]] {
                 return false;
             }
         }
@@ -440,13 +441,10 @@ bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
             __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
             unsigned int mask = _mm256_movemask_epi8(cmpResult);
 
-            if (mask != 0xffffffff) {
-                if (slowF(false, lhs.data() + i, lhs.data() + i + 32 + 1, rhs.data() + i, rhs.data() + i + 32)) {
-                    i += 16;
-                    return fnOneError();
-                } else {
-                    return false;
-                }
+            if (mask != 0xffffffff) [[unlikely]] {
+                auto firstError = findFirstError(mask);
+                i += firstError;
+                return fnOneError();
             }
 
         }
