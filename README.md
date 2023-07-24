@@ -1,13 +1,37 @@
 ### Introduction
 
 This project is a Proof-of-Concept (PoC) implementation of SIMD optimization for a simple task: 
-compare two strings and return true if you can get one from another with a single operation, 
-such as delete, add, or change one symbol.   
+```
+Compare two strings and return true if you can get one from another with a single operation, 
+such as 
+- delete one symbol;
+- add one symbol; 
+- change one symbol.
+```
+   
 This project explores the potential performance benefits of SIMD operations in string comparison tasks.
 
 SIMD (Single Instruction, Multiple Data) represents a paradigm in data processing 
 that allows the simultaneous execution of the same operation (instruction) on more than one data point.
 Thus, such machines exploit data-level parallelism, as opposed to task-level parallelism.
+
+Consider a simple operation like adding two lists of numbers. 
+In a conventional scalar operation, you would iterate over each element of the list and perform the addition one by one. 
+However, with SIMD, you can add entire lists together in a single operation, significantly increasing computational speed.
+
+SIMD works by utilizing wide data registers in modern CPUs. These registers can store multiple data points - like a vector of numbers. 
+A single SIMD instruction can then perform the same operation on each element in the register in parallel.
+
+For example, if the CPU supports 128-bit wide registers, you could store four 32-bit integers in a single register. 
+A single SIMD operation could then, for instance, add these four integers to four other integers (stored in another register) simultaneously.
+
+SIMD offers a powerful means of enhancing computational speed by allowing for operations to be performed on multiple data points concurrently. 
+It is a cornerstone of modern high-performance computing and forms an integral part of many of the applications we use every day. 
+
+The SSE (Streaming SIMD Extensions) and AVX (Advanced Vector Extensions) are instruction sets that extend the SIMD capabilities of Intel and AMD processors.
+The use of these extensions can greatly speed up your code, 
+especially when dealing with tasks like comparing arrays or strings, or processing image and audio data. 
+Here, we will focus on how to utilize SSE and AVX SIMD operations to speed up the comparison of strings.
 
 ### SSEn
 SSE (Streaming SIMD Extensions)
@@ -77,9 +101,30 @@ bool oneChangeSlow(std::string_view lhs, std::string_view rhs) noexcept {
 This code is already contains some optimization and removing branch from loop.  
 
 ### Add SIMD
-In the first iteration, we will use the 16, or 32 for AVX, packed 8 bits numbers (`unsigned char`) 
-to make fast comparing operation. Handle the part less than the register size with old method.
-```
+When comparing strings, typically, we need to compare each character in sequence until we either find a mismatch or reach the end of the shortest string.
+This can be quite slow for large strings as each comparison is done sequentially.
+With SSE or AVX, we can accelerate this process by loading chunks of the strings (16 bytes for SSE or 32 bytes for AVX) into SIMD registers
+and comparing these chunks simultaneously.
+
+For strings that aren't multiples of the SIMD register size, we handle the remaining characters using the traditional method. 
+Also, if a string is smaller than the SIMD register size, we would use the traditional comparison method.
+
+In theory, using SIMD operations, we can achieve up to a 16x (or 32x) speedup for infinite length strings since we're processing 16 (or 32) characters in a single operation. 
+However, in reality, this optimal speedup isn't always achievable due to overheads associated with SIMD operations.
+It's essential to remember that SIMD operations can sometimes be slower than regular operations depending on the CPU, 
+so performance gains aren't always guaranteed. 
+SIMD instructions might be more expensive due to factors such as loading and storing data to and from SIMD registers, 
+potential data alignment issues, or additional instructions required for handling edge cases.
+
+It is important to benchmark your SIMD-optimized code on your target system. 
+Performance can vary greatly between different systems and even between different processors from the same manufacturer. 
+By benchmarking, you can ensure that your optimizations are indeed improving performance and not unintentionally slowing down your program.
+
+Lastly, it's also important to verify the correctness of your SIMD-optimized code. 
+SIMD optimizations can introduce new types of bugs, especially around the handling of edge cases and data alignment. 
+Always thoroughly test your code to ensure it behaves as expected.
+
+```c++
 std::string_view f = "aaaaaaaaaaaaaaaa"; // 16 'a' == 0x61 == 97 one bite char string
 std::string_view s = "abaaaaaaaaaaaaaa"; // 'b' == 0x62 == 98
 __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(f.data())); // read 16 bites
@@ -103,7 +148,7 @@ auto firstError = _tzcnt_u32(mask); // firstError == 1
 | ~Mask      | 0x2      | 0x00     | 0xFF     | 0xFF     | -        | -        | -        | -        | -        | -         | -         | -         | -         | -         | -         | -         |
 
 
-This is the AVX version:
+This is the slow AVX version:
 ```c++
 for (size_t i = 0; i + 32 <= minSize; i += 32) {
     __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i + (oneError && !oneSize)));
@@ -129,17 +174,43 @@ for (size_t i = 0; i + 32 <= minSize; i += 32) {
     }
 }
 
-// end using slow method
+// end using no simd method
 auto pos = minSize - (minSize % 32);
 return slow(lhs.data() + pos + (oneError && !oneSize), lhs.end(), rhs.data() + pos, rhs.end());
 ```
+
 ### Continue optimizations
-- Split method to same size and different size cases to remove branches and computations
-- Split method to without error and case after first error
+- Split method to handle same size and different size cases
+
+One approach to enhance performance in code is to split the method into two distinct cases, specifically when handling strings of the same size versus different sizes.
+The primary advantage of this strategy is that it enables the compiler to avoid unnecessary branching and computations. 
+
+If we know beforehand that two strings are of equal length, we can remove the conditional checks related to string size, 
+thereby improving the speed of our function. 
+Similarly, handling different size strings separately allows for specific optimizations relevant to that case only.
+
+- Split method to handle cases without error and after first error
+
+This technique has the advantage of removing branches within the inner loop, further increasing the function's speed. 
+The case without error can run without any branching, optimizing the most common scenario. 
+If an error occurs, we switch to the second case, which includes error handling code.
+
 - Don't use full batch rollback for error in diff size case, find position as counts the number of trailing least significant zero bits
+
+When handling strings of different sizes, a common error to encounter is an out-of-bounds access.
+A typical approach to handle this error might be to rollback the entire batch of operations, but this can be costly.
+A more optimized approach is to handle this error in the same batch by finding the position of the error within the batch. 
+This technique avoids unnecessary rollback operations, saving computation time. 
+We can determine the position by counting the number of trailing least significant zero bits (using a function like _tzcnt_u32 mentioned earlier). 
+Using this approach, we only have to handle the mismatch without reverting the entire batch of comparisons, thereby saving valuable computation time.
 
 Same size sse implementation:
 ```c++
+unsigned countOfErrors(__m128i v) noexcept {
+    unsigned mask = _mm_movemask_epi8(v);
+    return 16 - std::popcount(mask);
+}
+
 bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept {
     assert(lhs.size() == rhs.size());
     bool oneError = false;
@@ -218,14 +289,29 @@ L1 Instruction 32 KiB (x8)
 L2 Unified 512 KiB (x8)
 L3 Unified 16384 KiB (x2)
 ```
+```
+linux
+Run on (16 X 4369.92 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 512 KiB (x8)
+  L3 Unified 4096 KiB (x2)
+```
 
-| Method     | EQ 15        | Diff 15        | EQ 45      | DIFF 45      | EQ 1285     | DIFF 1285     | EQ 120kb   | DIFF 120kb   | Speedup(1285)           |
-|------------|--------------|----------------|------------|--------------|-------------|---------------|------------|--------------|-------------------------|
-| slow       | 9.91ns       | 58.8ns         | 26.2ns     | 146ns        | 671ns       | 3361ns        | 62688ns    | 314956ns     | 1x                      |
-| fast       | 12.1ns       | 47.7ns         | 26.9ns     | 101ns        | 662ns       | 2073ns        | 58715ns    | 192337ns     | ~1.62x                  |
-| sse        | 12.0ns       | 71.1ns         | 12.8ns     | 83.9ns       | 70.6ns      | 395ns         | 6051ns     | 30713ns      | ~8.51x                  |
-| avx        | 11.5ns       | 68.8ns         | 11.8ns     | 89.2ns       | 39.5ns      | 299ns         | 3120ns     | 22495ns      | ~11.24x                 |
-| sseFast    | 9.31ns       | 58.2ns         | 8.87ns     | 73.3ns       | 63.8ns      | 311ns         | 4780ns     | 22712ns      | ~10.81x                 |
-| avxFast    | 9.39ns       | 60.3ns         | 9.32ns     | 73.8ns       | 64.7ns      | 282ns         | 4693ns     | 19740ns      | ~11.92x                 |
-
+| Method            | EQ 15    | Diff 15   | EQ 45    | DIFF 45   | EQ 1285   | DIFF 1285   | EQ 120kb   | DIFF 120kb   | Speedup(DIFF 1285)   |
+|-------------------|----------|-----------|----------|-----------|-----------|-------------|------------|--------------|----------------------|
+| slow windows      | 13.3ns   | 65.0ns    | 36.2ns   | 168ns     | 981ns     | 3.973us     | 89.888us   | 0.351ms      | ~0.53x               |
+| fast windows      | 7.29ns   | 44.7ns    | 14.8ns   | 93.8ns    | 314ns     | 2.122us     | 29.091us   | 0.190ms      | 1.x                  |
+| sse windows       | 11.3ns   | 76.6ns    | 12.8ns   | 93.8ns    | 72.1ns    | 405ns       | 6.011us    | 30.408us     | ~5.24x               |
+| sseFast windows   | 12.7ns   | 70.4ns    | 12.5ns   | 66.2ns    | 48.5ns    | 267ns       | 3.938us    | 20.832us     | ~7.94x               |
+| avx windows       | 12.1ns   | 78.7ns    | 12.2ns   | 93.6ns    | 41.2ns    | 319ns       | 3.177us    | 22.977us     | ~6.65x               |
+| avxFast windows   | 13.2ns   | 69.1ns    | 12.5ns   | 67.2ns    | 28.1ns    | 152ns       | 2.074us    | 11.079ns     | ~13.96x              |
+| ----------------- | -------- | --------- | -------- | --------- | --------- | ----------- | ---------- | ------------ | -------------------- |
+| slow Linux        | 18.6ns   | 100ns     | 69.8ns   | 353ns     | 2.389us   | 11.879us    | 0.229ms    | 1.139ms      | ~0.21x               |
+| fast Linux        | 5.79ns   | 42.3ns    | 13.4ns   | 100ns     | 305ns     | 2.575us     | 28.452us   | 0.241ms      | 1.x                  |
+| sse  Linux        | 19.8ns   | 103ns     | 19.0ns   | 111ns     | 65.8ns    | 346ns       | 5.709us    | 28.753us     | ~7.44x               |
+| sseFast Linux     | 6.48ns   | 41.5ns    | 7.84ns   | 48.2ns    | 59.6ns    | 278ns       | 5.383us    | 24.346us     | ~9.26x               |
+| avx Linux         | 19.9ns   | 103ns     | 17.8ns   | 109ns     | 37.4ns    | 256ns       | 2.861us    | 20.409us     | ~10.x                |
+| avxFast Linux     | 6.02ns   | 43.6ns    | 6.48ns   | 46.9ns    | 29.0ns    | 146ns       | 2.622us    | 12.611us     | ~17.63x              |
 

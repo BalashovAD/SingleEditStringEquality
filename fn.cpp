@@ -3,6 +3,7 @@
 #include <immintrin.h>
 #include <cassert>
 #include <bit>
+#include <cstring>
 
 
 using it = std::string_view::const_iterator;
@@ -259,27 +260,12 @@ bool oneChangeAVX(std::string_view lhs, std::string_view rhs) noexcept {
 };
 
 
-bool slowF(bool oneError, it lb, it le, it rb, it re) noexcept {
-    const size_t size = re - rb;
-    const auto oneSizeLocal = (re - rb) == (le - lb);
-    size_t i = 0;
-    const auto fnOneSizeOneError = [&]() {
-        for (; i != size; ++i) {
-            if (lb[i] != rb[i]) {
-                return false;
-            }
-        }
+bool slowF(it lb, it le, it rb, it re) noexcept {
+    const auto size = re - rb;
+    if (size == 0) {
         return true;
-    };
-    const auto fnOneSizeNoError = [&]() {
-        for (; i != size; ++i) {
-            if (lb[i] != rb[i]) {
-                ++i;
-                return fnOneSizeOneError();
-            }
-        }
-        return true;
-    };
+    }
+    int i = 0;
     const auto fnDiffSizeOneError = [&]() {
         for (; i != size; ++i) {
             if (lb[i + 1] != rb[i]) {
@@ -296,29 +282,85 @@ bool slowF(bool oneError, it lb, it le, it rb, it re) noexcept {
         }
         return true;
     };
-    if (oneSizeLocal) {
-        if (oneError) {
-            return fnOneSizeOneError();
-        } else {
-            return fnOneSizeNoError();
-        }
-    } else {
-        if (oneError) {
-            return fnDiffSizeOneError();
-        } else {
-            return fnDiffSizeNoError();
-        }
-    }
+
+    return fnDiffSizeNoError();
+}
+
+__m128i load16(char const*const begin, size_t size) noexcept {
+    static constexpr auto STEP_SIZE = 16;
+    assert(size <= STEP_SIZE);
+    char buffer[STEP_SIZE];
+    memset(buffer, 0, STEP_SIZE);
+    memcpy(buffer, begin, size);
+    return _mm_loadu_si128(reinterpret_cast<const __m128i*>(buffer));
+}
+
+__m256i load32(char const*const begin, size_t size) noexcept {
+    static constexpr auto STEP_SIZE = 32;
+    assert(size <= STEP_SIZE);
+    alignas(STEP_SIZE) char buffer[STEP_SIZE];
+    memset(buffer, 0, STEP_SIZE);
+    memcpy(buffer, begin, size);
+    return _mm256_load_si256(reinterpret_cast<const __m256i*>(buffer));
 }
 
 
+unsigned tailEq(it lb, it le, it rb, it re) noexcept {
+    assert((re - rb) == (le - lb));
+    const size_t size = re - rb;
+    if (size == 0) {
+        return 0;
+    }
+
+    const auto handle16 = [&]() {
+        auto lhs = load16(lb, size);
+        auto rhs = load16(rb, size);
+        auto cmp = _mm_cmpeq_epi8(lhs, rhs);
+        return countOfErrors(cmp);
+    };
+
+    const auto handle32 = [&]() {
+        auto lhs = load32(lb, size);
+        auto rhs = load32(rb, size);
+        auto cmp = _mm256_cmpeq_epi8(lhs, rhs);
+        return countOfErrors(cmp);
+    };
+
+    if (size <= 16) {
+        return handle16();
+    } else {
+        return handle32();
+    }
+}
+
 bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept {
     assert(lhs.size() == rhs.size());
-    bool oneError = false;
     const auto size = lhs.size();
+    if (size <= 16) {
+//        return tailEq(lhs.data(), lhs.data() + size, rhs.data(), rhs.data() + size) <= 1;
+
+        const auto slow = [](it lb, it le, it rb, it re) noexcept {
+            const size_t size = re - rb;
+            bool oneError = false;
+            const auto oneSizeLocal = (re - rb) == (le - lb);
+            for (size_t i = 0; i != size; ++i) {
+                if (lb[i] != rb[i]) {
+                    if (std::exchange(oneError, true)) {
+                        return false;
+                    }
+                    i -= !oneSizeLocal;
+                }
+            }
+            return true;
+        };
+
+        return slow(lhs.data(), lhs.data() + size, rhs.data(), rhs.data() + size);
+    }
+    bool oneError = false;
 
     size_t i = 0;
-    for (; i + 16 <= size; i += 16) {
+    const auto reducedSize = size - 16;
+    for (; i <= reducedSize; i += 16) {
         __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
         __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
         __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
@@ -331,20 +373,25 @@ bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
         }
     }
 
-    return slowF(oneError, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
+    return tailEq(lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end()) + oneError <= 1;
 }
 
 
 bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept {
     assert(lhs.size() > rhs.size());
-    if (lhs.size() - rhs.size() != 1) {
+    const auto minSize = rhs.size();
+    if (lhs.size() - minSize != 1) {
         return false;
     }
 
-    const auto minSize = rhs.size();
+    if (minSize <= 16) {
+        return slowF(lhs.data(), lhs.end(), rhs.data(), rhs.end());
+    }
+
     size_t i = 0;
+    const auto reducedSize = minSize - 16;
     const auto fnOneError = [&]() {
-        for (; i + 16 <= minSize; i += 16) {
+        for (; i <= reducedSize; i += 16) {
             __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i + 1));
             __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
@@ -354,11 +401,11 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
                 return false;
             }
         }
-        return slowF(true, lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end());
+        return tailEq(lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end()) == 0;
     };
 
     const auto fnNoError = [&]() {
-        for (; i + 16 <= minSize; i += 16) {
+        for (; i <= reducedSize; i += 16) {
             __m128i target = _mm_loadu_si128(reinterpret_cast<const __m128i*>(lhs.data() + i));
             __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(rhs.data() + i));
             __m128i cmpResult = _mm_cmpeq_epi8(chunk, target);
@@ -372,7 +419,7 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
 
         }
 
-        return slowF(false, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
+        return slowF(lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
     };
 
     return fnNoError();
@@ -394,8 +441,13 @@ bool oneChangeSameSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
     bool oneError = false;
     const auto size = lhs.size();
 
+    if (size <= 32) {
+        return tailEq(lhs.data(), lhs.end(), rhs.data(), rhs.end())<= 1;
+    }
+
     size_t i = 0;
-    for (; i + 32 <= size; i += 32) {
+    const auto reducedSize = size - 32;
+    for (; i <= reducedSize; i += 32) {
         __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i));
         __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
         __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
@@ -408,20 +460,25 @@ bool oneChangeSameSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
         }
     }
 
-    return slowF(oneError, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
+    return tailEq(lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end()) + oneError <= 1;
 }
 
 
 bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexcept {
     assert(lhs.size() > rhs.size());
-    if (lhs.size() - rhs.size() != 1) {
+    const auto minSize = rhs.size();
+    if (lhs.size() - minSize != 1) {
         return false;
     }
 
-    const auto minSize = rhs.size();
+    if (minSize <= 32) {
+        return slowF(lhs.data(), lhs.end(), rhs.data(), rhs.end());
+    }
+
     size_t i = 0;
+    const auto reducedSize = minSize - 32;
     const auto fnOneError = [&]() {
-        for (; i + 32 <= minSize; i += 32) {
+        for (; i <= reducedSize; i += 32) {
             __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i + 1));
             __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
             __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
@@ -431,11 +488,11 @@ bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
                 return false;
             }
         }
-        return slowF(true, lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end());
+        return tailEq(lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end()) == 0;
     };
 
     const auto fnNoError = [&]() {
-        for (; i + 32 <= minSize; i += 32) {
+        for (; i <= reducedSize; i += 32) {
             __m256i target = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(lhs.data() + i));
             __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(rhs.data() + i));
             __m256i cmpResult = _mm256_cmpeq_epi8(chunk, target);
@@ -446,10 +503,9 @@ bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
                 i += firstError;
                 return fnOneError();
             }
-
         }
 
-        return slowF(false, lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
+        return slowF(lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end());
     };
 
     return fnNoError();

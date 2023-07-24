@@ -123,11 +123,11 @@ TEST(Movemask, Ne128) {
     EXPECT_NE(mask, 0x0000FFFF);
     EXPECT_EQ(std::popcount(mask), 15);
     EXPECT_EQ(popcount(cmpResult), 128 - 8);
-    printInBinary(mask);
+//    printInBinary(mask);
     auto revMask = ~mask;
-    printInBinary(revMask);
+//    printInBinary(revMask);
     auto firstError = _tzcnt_u32(revMask);
-    std::cout << firstError << std::endl;
+//    std::cout << firstError << std::endl;
     EXPECT_EQ(firstError, 1);
 }
 
