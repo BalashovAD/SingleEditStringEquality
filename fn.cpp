@@ -262,6 +262,7 @@ bool oneChangeAVX(std::string_view lhs, std::string_view rhs) noexcept {
 
 bool slowF(it lb, it le, it rb, it re) noexcept {
     const auto size = re - rb;
+    assert(le - lb == size + 1);
     if (size == 0) {
         return true;
     }
@@ -305,9 +306,7 @@ __m256i load32(char const*const begin, size_t size) noexcept {
 }
 
 
-unsigned tailEq(it lb, it le, it rb, it re) noexcept {
-    assert((re - rb) == (le - lb));
-    const size_t size = re - rb;
+unsigned tailEqSIMD(it lb, it rb, size_t size) noexcept {
     if (size == 0) {
         return 0;
     }
@@ -333,28 +332,22 @@ unsigned tailEq(it lb, it le, it rb, it re) noexcept {
     }
 }
 
+
+unsigned tailEqMEMCMP(it lb, it rb, size_t size) noexcept {
+    unsigned diff = 0;
+    for (const auto end = lb + size; lb != end; ++lb, ++rb) {
+        if (*lb != *rb) {
+            ++diff;
+        }
+    }
+    return diff;
+}
+
 bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept {
     assert(lhs.size() == rhs.size());
     const auto size = lhs.size();
     if (size <= 16) {
-//        return tailEq(lhs.data(), lhs.data() + size, rhs.data(), rhs.data() + size) <= 1;
-
-        const auto slow = [](it lb, it le, it rb, it re) noexcept {
-            const size_t size = re - rb;
-            bool oneError = false;
-            const auto oneSizeLocal = (re - rb) == (le - lb);
-            for (size_t i = 0; i != size; ++i) {
-                if (lb[i] != rb[i]) {
-                    if (std::exchange(oneError, true)) {
-                        return false;
-                    }
-                    i -= !oneSizeLocal;
-                }
-            }
-            return true;
-        };
-
-        return slow(lhs.data(), lhs.data() + size, rhs.data(), rhs.data() + size);
+        return tailEqMEMCMP(lhs.data(), rhs.data(), size) <= 1;
     }
     bool oneError = false;
 
@@ -373,7 +366,7 @@ bool oneChangeSameSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
         }
     }
 
-    return tailEq(lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end()) + oneError <= 1;
+    return tailEqMEMCMP(lhs.data() + i, rhs.data() + i, size - i) + oneError <= 1;
 }
 
 
@@ -401,7 +394,7 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
                 return false;
             }
         }
-        return tailEq(lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end()) == 0;
+        return tailEqMEMCMP(lhs.data() + i + 1, rhs.data() + i, minSize - i) == 0;
     };
 
     const auto fnNoError = [&]() {
@@ -442,7 +435,7 @@ bool oneChangeSameSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
     const auto size = lhs.size();
 
     if (size <= 32) {
-        return tailEq(lhs.data(), lhs.end(), rhs.data(), rhs.end())<= 1;
+        return tailEqMEMCMP(lhs.data(), rhs.data(), size) <= 1;
     }
 
     size_t i = 0;
@@ -460,7 +453,7 @@ bool oneChangeSameSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
         }
     }
 
-    return tailEq(lhs.data() + i, lhs.end(), rhs.data() + i, rhs.end()) + oneError <= 1;
+    return tailEqMEMCMP(lhs.data() + i, rhs.data() + i, size - i) + oneError <= 1;
 }
 
 
@@ -488,7 +481,7 @@ bool oneChangeDiffSizeFastAVX(std::string_view lhs, std::string_view rhs) noexce
                 return false;
             }
         }
-        return tailEq(lhs.data() + i + 1, lhs.end(), rhs.data() + i, rhs.end()) == 0;
+        return tailEqMEMCMP(lhs.data() + i + 1, rhs.data() + i, minSize - i) == 0;
     };
 
     const auto fnNoError = [&]() {
