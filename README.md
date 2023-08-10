@@ -1,34 +1,33 @@
 ### Introduction
 
-This project is a Proof-of-Concept (PoC) implementation of SIMD optimization for a simple task: 
+This project serves as a Proof-of-Concept (PoC) for leveraging SIMD optimization in a specific scenario:
 ```
-Compare two strings and return true if you can get one from another with a single operation, 
-such as 
-- delete one symbol;
-- add one symbol; 
-- change one symbol.
+Compare two strings and return true if you can get one from another with a single operation, such as:
+- Deleting one character;
+- Adding one character;
+- Replacing one character.
 ```
    
 This project explores the potential performance benefits of SIMD operations in string comparison tasks.
 
 SIMD (Single Instruction, Multiple Data) represents a paradigm in data processing 
 that allows the simultaneous execution of the same operation (instruction) on more than one data point.
-Thus, such machines exploit data-level parallelism, as opposed to task-level parallelism.
+In essence, it utilizes data-level parallelism, rather than task-level parallelism.
 
 Consider a simple operation like adding two lists of numbers. 
-In a conventional scalar operation, you would iterate over each element of the list and perform the addition one by one. 
-However, with SIMD, you can add entire lists together in a single operation, significantly increasing computational speed.
+In a conventional scalar operation, you would iterate over each element of the list and perform the addition one by one.
+With SIMD, however, entire lists can be added together in one operation, greatly boosting computational speed.
 
-SIMD works by utilizing wide data registers in modern CPUs. These registers can store multiple data points - like a vector of numbers. 
+SIMD works by utilizing wide data registers in modern CPUs that can store multiple data points, such as vectors of numbers. 
 A single SIMD instruction can then perform the same operation on each element in the register in parallel.
 
-For example, if the CPU supports 128-bit wide registers, you could store four 32-bit integers in a single register. 
-A single SIMD operation could then, for instance, add these four integers to four other integers (stored in another register) simultaneously.
+For example, if the CPU supports 128-bit wide registers, you could store four 32-bit integers in a single register.
+For instance, a single SIMD operation could simultaneously add these four integers to another set of four integers stored in a different register.
 
 SIMD offers a powerful means of enhancing computational speed by allowing for operations to be performed on multiple data points concurrently. 
-It is a cornerstone of modern high-performance computing and forms an integral part of many of the applications we use every day. 
+It is a cornerstone of modern high-performance computing and forms the backbone of many everyday applications. 
 
-The SSE (Streaming SIMD Extensions) and AVX (Advanced Vector Extensions) are instruction sets that extend the SIMD capabilities of Intel and AMD processors.
+The SSE and AVX are instruction sets that extend the SIMD capabilities of Intel and AMD processors.
 The use of these extensions can greatly speed up your code, 
 especially when dealing with tasks like comparing arrays or strings, or processing image and audio data. 
 Here, we will focus on how to utilize SSE and AVX SIMD operations to speed up the comparison of strings.
@@ -36,15 +35,15 @@ Here, we will focus on how to utilize SSE and AVX SIMD operations to speed up th
 ### SSEn
 SSE (Streaming SIMD Extensions)
 
-The Streaming SIMD Extensions (SSE) instruction set introduces 8 dedicated 128-bit registers (XMM0 to XMM7) to the processor's architecture. 
+The SSE instruction set introduces 8 dedicated 128-bit registers (XMM0 to XMM7) to the processor's architecture. 
 These registers support concurrent computation on multiple data points, significantly accelerating certain types of operations.
 
-Each 128-bit register can handle multiple data types. Specifically, it can process up to 
+Each 128-bit register supports multiple data types. Specifically, it can process up to 
 4 single-precision (32-bit) floating-point numbers, 
 2 double-precision (64-bit) numbers, 
 or integer data of varying sizes, ranging from 8 to 128 bits.
 
-For example, an operation like vector addition could be performed on 
+For example, an operation, such as vector addition, can process on 
 four 32-bit floating-point numbers simultaneously using a single SSE instruction, 
 vastly increasing the throughput for such operations.
 
@@ -69,7 +68,7 @@ making them highly advantageous for a wide range of applications.
 
 ### Basic solution
 The key points:
-- Size of equal string can have difference 0 or 1
+- Size of comparable strings can have difference 0 or 1
 - Operation of adding or deleting is similar, stay only deleting
 - if size difference is 1 - op should be deleting
 - suggest that lhs is always bigger than rhs
@@ -98,11 +97,11 @@ bool oneChangeSlow(std::string_view lhs, std::string_view rhs) noexcept {
     return true;
 }
 ```
-This code is already contains some optimization and removing branch from loop.  
+This code already contains optimizations and removes branching from the loop.
 
 ### Add SIMD
 When comparing strings, typically, we need to compare each character in sequence until we either find a mismatch or reach the end of the shortest string.
-This can be quite slow for large strings as each comparison is done sequentially.
+For large strings, sequential comparison can be time-consuming.
 With SSE or AVX, we can accelerate this process by loading chunks of the strings (16 bytes for SSE or 32 bytes for AVX) into SIMD registers
 and comparing these chunks simultaneously.
 
@@ -180,7 +179,7 @@ return slow(lhs.data() + pos + (oneError && !oneSize), lhs.end(), rhs.data() + p
 ```
 
 ### Continue optimizations
-- Split method to handle same size and different size cases
+- Divide the method to handle cases of equal-sized strings separately from those of different sizes
 
 One approach to enhance performance in code is to split the method into two distinct cases, specifically when handling strings of the same size versus different sizes.
 The primary advantage of this strategy is that it enables the compiler to avoid unnecessary branching and computations. 
@@ -195,7 +194,7 @@ This technique has the advantage of removing branches within the inner loop, fur
 The case without error can run without any branching, optimizing the most common scenario. 
 If an error occurs, we switch to the second case, which includes error handling code.
 
-- Don't use full batch rollback for error in diff size case, find position as counts the number of trailing least significant zero bits
+- Instead of using a full batch rollback for errors in cases of different sizes, locate the error position by counting the number of trailing least significant zero bits
 
 When handling strings of different sizes, a common error to encounter is an out-of-bounds access.
 A typical approach to handle this error might be to rollback the entire batch of operations, but this can be costly.
@@ -203,6 +202,13 @@ A more optimized approach is to handle this error in the same batch by finding t
 This technique avoids unnecessary rollback operations, saving computation time. 
 We can determine the position by counting the number of trailing least significant zero bits (using a function like _tzcnt_u32 mentioned earlier). 
 Using this approach, we only have to handle the mismatch without reverting the entire batch of comparisons, thereby saving valuable computation time.
+
+- [Possible] For data alignment, consider using the _mmX_load_siX instruction
+
+I employ the `_mmX_loadu_siX` instruction to load data into registers, where the `loadu` suffix indicates the loading of unaligned data. For strings of equal lengths, there's potential for manual data alignment. We can iteratively process the first `n` elements until the address becomes divisible by the desired alignment.
+In scenarios with unequal string lengths, our approach can remain consistent until the first discrepancy is encountered. Beyond this point, only one of the strings can be aligned. While this optimization might slightly reduce performance for shorter strings, it can potentially enhance speed for longer ones.
+It's worth noting that, on my specific CPU, the performance difference between loading aligned and unaligned data is marginal. Given this observation, I opted not to integrate this alignment optimization into the implementation.
+
 
 Same size sse implementation:
 ```c++

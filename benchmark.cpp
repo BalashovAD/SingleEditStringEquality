@@ -123,6 +123,70 @@ static void BM_memcmp(benchmark::State& state, std::string const& challenge) {
     free(buffer);
 }
 
+static constexpr auto L1_CACHE_SIZE = 32 * 1024;
+static constexpr auto LOAD_TEST_SIZE = L1_CACHE_SIZE * 8;
+
+static void BM_SIMDLoadAlign(benchmark::State& state) {
+    alignas(64) char str[LOAD_TEST_SIZE];
+    alignas(64) char str2[LOAD_TEST_SIZE];
+    for (auto _ : state) {
+        for (auto i = 0; i < LOAD_TEST_SIZE; i += 64) { // we read only 32 bites, but I want to skip cache line
+            auto lhs = _mm256_load_si256(reinterpret_cast<const __m256i*>(str + i));
+            auto rhs = _mm256_load_si256(reinterpret_cast<const __m256i*>(str2 + i));
+            auto ad = _mm256_cmpeq_epi8(lhs, rhs);
+            benchmark::DoNotOptimize(ad);
+        }
+    }
+
+    state.SetBytesProcessed(LOAD_TEST_SIZE * state.iterations());
+}
+
+static void BM_SIMDULoadAlign(benchmark::State& state) {
+    alignas(64) char str[LOAD_TEST_SIZE];
+    alignas(64) char str2[LOAD_TEST_SIZE];
+    for (auto _ : state) {
+        for (auto i = 0; i < LOAD_TEST_SIZE; i += 64) { // we read only 32 bites, but I want to skip cache line
+            auto lhs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(str + i));
+            auto rhs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(str2 + i));
+            auto ad = _mm256_cmpeq_epi8(lhs, rhs);
+            benchmark::DoNotOptimize(ad);
+        }
+    }
+
+    state.SetBytesProcessed(LOAD_TEST_SIZE * state.iterations());
+}
+
+static void BM_SIMDULoadUnAlign(benchmark::State& state) {
+    alignas(64) char str[LOAD_TEST_SIZE + 1];
+    alignas(64) char str2[LOAD_TEST_SIZE + 1];
+    for (auto _ : state) {
+        for (auto i = 1; i < LOAD_TEST_SIZE + 1; i += 64) { // we read only 32 bites, but I want to skip cache line
+            auto lhs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(str + i));
+            auto rhs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(str2 + i));
+            auto ad = _mm256_cmpeq_epi8(lhs, rhs);
+            benchmark::DoNotOptimize(ad);
+        }
+    }
+
+    state.SetBytesProcessed(LOAD_TEST_SIZE * state.iterations());
+}
+
+static void BM_SIMDULoadUnAlignCacheLines(benchmark::State& state) {
+    constexpr auto shift = 60;
+    alignas(64) char str[LOAD_TEST_SIZE + shift];
+    alignas(64) char str2[LOAD_TEST_SIZE + shift];
+    for (auto _ : state) {
+        for (auto i = shift; i < LOAD_TEST_SIZE + shift; i += 64) { // we read only 32 bites, but I want to skip whole cache line
+            auto lhs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(str + i));
+            auto rhs = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(str2 + i));
+            auto ad = _mm256_cmpeq_epi8(lhs, rhs);
+            benchmark::DoNotOptimize(ad);
+        }
+    }
+
+    state.SetBytesProcessed(LOAD_TEST_SIZE * state.iterations());
+}
+
 static inline std::string SHORT_CHALLENGE = gen(15);
 static inline std::string MID_CHALLENGE = gen(45);
 static inline std::string LONG_CHALLENGE = gen(16 * 80 + 5); // 1285 = 1 Kb
@@ -152,8 +216,13 @@ DEF_BENCH(avx, oneChangeAVX);
 DEF_BENCH(sseFast, oneChangeFast);
 DEF_BENCH(avxFast, oneChangeFastAVX);
 
-BENCHMARK_CAPTURE(BM_memcmp, memcmp, SHORT_CHALLENGE);
-BENCHMARK_CAPTURE(BM_memcmp, memcmp, INF_CHALLENGE);
+BENCHMARK_CAPTURE(BM_memcmp, memcmp15, SHORT_CHALLENGE);
+BENCHMARK_CAPTURE(BM_memcmp, memcmpInf, INF_CHALLENGE);
+
+BENCHMARK(BM_SIMDLoadAlign);
+BENCHMARK(BM_SIMDULoadAlign);
+BENCHMARK(BM_SIMDULoadUnAlign);
+BENCHMARK(BM_SIMDULoadUnAlignCacheLines);
 
 
 BENCHMARK_MAIN();
