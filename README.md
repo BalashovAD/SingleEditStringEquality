@@ -197,13 +197,13 @@ If an error occurs, we switch to the second case, which includes error handling 
 - Instead of using a full batch rollback for errors in cases of different sizes, locate the error position by counting the number of trailing least significant zero bits
 
 When handling strings of different sizes, a common error to encounter is an out-of-bounds access.
-A typical approach to handle this error might be to rollback the entire batch of operations, but this can be costly.
+A typical approach to handle this error might be to roll back the entire batch of operations, but this can be costly.
 A more optimized approach is to handle this error in the same batch by finding the position of the error within the batch. 
 This technique avoids unnecessary rollback operations, saving computation time. 
-We can determine the position by counting the number of trailing least significant zero bits (using a function like _tzcnt_u32 mentioned earlier). 
+We can determine the position by counting the number of trailing least significant zero bits (using a function like `_tzcnt_u32` mentioned earlier). 
 Using this approach, we only have to handle the mismatch without reverting the entire batch of comparisons, thereby saving valuable computation time.
 
-- [Possible] For data alignment, consider using the _mmX_load_siX instruction
+- [Possible] For data alignment, consider using the `_mmX_load_siX instruction`
 
 I employ the `_mmX_loadu_siX` instruction to load data into registers, where the `loadu` suffix indicates the loading of unaligned data. For strings of equal lengths, there's potential for manual data alignment. We can iteratively process the first `n` elements until the address becomes divisible by the desired alignment.
 In scenarios with unequal string lengths, our approach can remain consistent until the first discrepancy is encountered. Beyond this point, only one of the strings can be aligned. While this optimization might slightly reduce performance for shorter strings, it can potentially enhance speed for longer ones.
@@ -288,6 +288,7 @@ bool oneChangeDiffSizeFast(std::string_view lhs, std::string_view rhs) noexcept 
 
 ```
 Ryzen 7 3700X, windows MinGW 13.1
+100 repetitions, median value, cv < 1.9%
 Run on (16 X 3593 MHz CPU s)
 CPU Caches:
 L1 Data 32 KiB (x8)
@@ -295,8 +296,17 @@ L1 Instruction 32 KiB (x8)
 L2 Unified 512 KiB (x8)
 L3 Unified 16384 KiB (x2)
 ```
+| *       | EQ 15  | DIFF 15 | EQ 45  | DIFF 45 | EQ 1285 | DIFF 1285 | EQ 10Kb | DIFF 10Kb | EQ 30Kb | DIFF 30Kb | EQ 120Kb | DIFF 120Kb | Speedup |
+|---------|--------|---------|--------|---------|---------|-----------|---------|-----------|---------|-----------|----------|------------|---------|
+| slow    | 9.63ns | 73.2ns  | 24.6ns | 199ns   | 670ns   | 4081ns    | 5022ns  | 29.994us  | 14997ns | 89.979us  | 59.989us | 368.968us  | 0.60x   |
+| fast    | 7.85ns | 55.8ns  | 15.7ns | 107ns   | 326ns   | 2354ns    | 2511ns  | 18032ns   | 7673ns  | 54.688us  | 31.495us | 224.933us  | 1.0x    |
+| sse     | 15.4ns | 107ns   | 15ns   | 112ns   | 75ns    | 500ns     | 516ns   | 3223ns    | 1535ns  | 9208ns    | 5999ns   | 36.098us   | 6.23x   |
+| avx     | 15ns   | 100ns   | 13.8ns | 107ns   | 40.1ns  | 353ns     | 276ns   | 2246ns    | 785ns   | 6278ns    | 3048ns   | 25.844us   | 8.70x   |
+| sseFast | 10.5ns | 65.6ns  | 12.6ns | 87.9ns  | 57.2ns  | 322ns     | 392ns   | 2148ns    | 1256ns  | 6348ns    | 5162ns   | 26.681us   | 8.43x   |
+| avxFast | 10.3ns | 65.6ns  | 11.2ns | 78.5ns  | 31.4ns  | 180ns     | 225ns   | 1256ns    | 663ns   | 3530ns    | 2407ns   | 14125ns    | 15.93x  |
 ```
-linux
+AMD Ryzen 7 5700U, linux gcc 12.3.0 compiler, clang 15.0.7 linker
+100 repetitions, median value, cv < 1.3%
 Run on (16 X 4369.92 MHz CPU s)
 CPU Caches:
   L1 Data 32 KiB (x8)
@@ -304,20 +314,30 @@ CPU Caches:
   L2 Unified 512 KiB (x8)
   L3 Unified 4096 KiB (x2)
 ```
+| *       | EQ 15  | Diff 15 | EQ 45  | DIFF 45 | EQ 1285 | DIFF 1285 | EQ 10Kb | DIFF 10Kb | EQ 30Kb  | DIFF 30Kb | EQ 120Kb  | DIFF 120Kb | Speedup |
+|---------|--------|---------|--------|---------|---------|-----------|---------|-----------|----------|-----------|-----------|------------|---------|
+| slow    | 18.6ns | 114ns   | 69.8ns | 420ns   | 2385ns  | 14275ns   | 19111ns | 113.955us | 57.259us | 341.77us  | 228.835us | 1366.83us  | 0.18x   |
+| fast    | 5.82ns | 48.2ns  | 13.3ns | 110ns   | 306ns   | 2767ns    | 2394ns  | 21662ns   | 7154ns   | 64.965us  | 28.514us  | 258.225us  | 1.0x    |
+| sse     | 19.8ns | 122ns   | 18.9ns | 128ns   | 66.6ns  | 410ns     | 503ns   | 3052ns    | 1449ns   | 8758ns    | 5740ns    | 35.498us   | 7.27x   |
+| avx     | 20.1ns | 123ns   | 18.3ns | 126ns   | 37.6ns  | 294ns     | 265ns   | 2116ns    | 738ns    | 6092ns    | 2894ns    | 24246ns    | 10.65x  |
+| sseFast | 5.5ns  | 37.4ns  | 8.31ns | 59.6ns  | 54.7ns  | 297ns     | 425ns   | 2275ns    | 1257ns   | 6673ns    | 5016ns    | 27.138us   | 9.51x   |
+| avxFast | 5.5ns  | 37.5ns  | 8ns    | 56.6ns  | 25.6ns  | 165ns     | 166ns   | 1230ns    | 584ns    | 3500ns    | 2453ns    | 14832ns    | 17.41x  |
 
-| Method            | EQ 15    | Diff 15   | EQ 45    | DIFF 45   | EQ 1285   | DIFF 1285   | EQ 120kb   | DIFF 120kb   | Speedup(DIFF 1285)   |
-|-------------------|----------|-----------|----------|-----------|-----------|-------------|------------|--------------|----------------------|
-| slow windows      | 13.3ns   | 65.0ns    | 36.2ns   | 168ns     | 981ns     | 3.973us     | 89.888us   | 0.351ms      | ~0.53x               |
-| fast windows      | 7.29ns   | 44.7ns    | 14.8ns   | 93.8ns    | 314ns     | 2.122us     | 29.091us   | 0.190ms      | 1.x                  |
-| sse windows       | 11.3ns   | 76.6ns    | 12.8ns   | 93.8ns    | 72.1ns    | 405ns       | 6.011us    | 30.408us     | ~5.24x               |
-| sseFast windows   | 12.7ns   | 70.4ns    | 12.5ns   | 66.2ns    | 48.5ns    | 267ns       | 3.938us    | 20.832us     | ~7.94x               |
-| avx windows       | 12.1ns   | 78.7ns    | 12.2ns   | 93.6ns    | 41.2ns    | 319ns       | 3.177us    | 22.977us     | ~6.65x               |
-| avxFast windows   | 13.2ns   | 69.1ns    | 12.5ns   | 67.2ns    | 28.1ns    | 152ns       | 2.074us    | 11.079ns     | ~13.96x              |
-| ----------------- | -------- | --------- | -------- | --------- | --------- | ----------- | ---------- | ------------ | -------------------- |
-| slow Linux        | 18.6ns   | 100ns     | 69.8ns   | 353ns     | 2.389us   | 11.879us    | 0.229ms    | 1.139ms      | ~0.21x               |
-| fast Linux        | 5.79ns   | 42.3ns    | 13.4ns   | 100ns     | 305ns     | 2.575us     | 28.452us   | 0.241ms      | 1.x                  |
-| sse  Linux        | 19.8ns   | 103ns     | 19.0ns   | 111ns     | 65.8ns    | 346ns       | 5.709us    | 28.753us     | ~7.44x               |
-| sseFast Linux     | 6.48ns   | 41.5ns    | 7.84ns   | 48.2ns    | 59.6ns    | 278ns       | 5.383us    | 24.346us     | ~9.26x               |
-| avx Linux         | 19.9ns   | 103ns     | 17.8ns   | 109ns     | 37.4ns    | 256ns       | 2.861us    | 20.409us     | ~10.x                |
-| avxFast Linux     | 6.02ns   | 43.6ns    | 6.48ns   | 46.9ns    | 29.0ns    | 146ns       | 2.622us    | 12.611us     | ~17.63x              |
+### Conclusion
 
+- Speedup for Long Strings: 
+SIMD versions, particularly those using AVX instructions, show substantial speedups of approximately 8x and 16x for very long strings. 
+This demonstrates the power of SIMD for parallel processing of large data sets.
+
+- Variation Across Systems: 
+The results indicate a significant variation in performance across the two different systems. 
+This highlights the importance of considering the specific hardware and software environment when evaluating the performance of SIMD implementations. 
+The differences in CPU architecture, compiler, and operating system can all contribute to these variations.
+
+- Performance for Short Strings:
+Only for very short strings, less than 1 - 2 chunks, does the no-SIMD implementation work faster. 
+This observation emphasizes the importance of understanding the average values of input strings in the target application. 
+The overhead associated with SIMD instructions may outweigh the benefits for small data sizes, and careful consideration of the typical use case is essential for making informed optimization decisions.
+
+In summary, the benchmark results illustrate the potential benefits and complexities of using SIMD instructions in C++ code. 
+While significant speedups can be achieved, especially for long strings, the performance is nuanced and depends on factors such as data size, system configuration, and the specific computational task. 
