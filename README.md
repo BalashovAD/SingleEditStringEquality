@@ -52,26 +52,26 @@ Advanced Vector Extensions (AVX) advance the SIMD capabilities even further,
 primarily by increasing the register size. 
 AVX introduces 256-bit wide YMM registers, thus augmenting the amount of data that can be processed simultaneously.
 
-These larger registers allow for processing up to 8 single-precision (32-bit) or 4 double-precision (64-bit) floating-point numbers, 
-or integer data of varying sizes, from 8 to 256 bits, concurrently.
+These larger registers enable the processing of various data types concurrently. 
+They can handle up to 8 single-precision (32-bit) or 4 double-precision (64-bit) floating-point numbers. 
+Additionally, they can manage integer data of varying sizes, ranging from 8 to 256 bits.
 This capability greatly improves the throughput of such operations and, thus, 
 the overall performance of tasks that can exploit this form of parallelism.
 
 Later versions of AVX introduced even wider registers (512 bits in AVX-512), 
 further extending the capabilities of SIMD operations.
 
-By optimizing for SSE and AVX instructions, 
-applications like this project's string comparison task can achieve higher levels of performance and efficiency, 
-especially when dealing with large amounts of data. 
+By using SSE and AVX instructions, tasks such as string comparison in this project can attain enhanced performance and efficiency, 
+particularly with large data volumes. 
 Implementations using these instruction sets can lead to significant reductions in computation time and improved parallelism, 
 making them highly advantageous for a wide range of applications.
 
 ### Basic solution
 The key points:
-- Size of comparable strings can have difference 0 or 1
-- Operation of adding or deleting is similar, stay only deleting
-- if size difference is 1 - op should be deleting
-- suggest that lhs is always bigger than rhs
+- size of comparable strings can have difference 0 or 1;
+- operation of adding or deleting is similar, stay only deleting;
+- if size difference is 1 - op should be deleting;
+- suggest that lhs is always bigger than rhs.
 
 ```c++
 bool oneChangeSlow(std::string_view lhs, std::string_view rhs) noexcept {
@@ -108,10 +108,9 @@ and comparing these chunks simultaneously.
 For strings that aren't multiples of the SIMD register size, we handle the remaining characters using the traditional method. 
 Also, if a string is smaller than the SIMD register size, we would use the traditional comparison method.
 
-In theory, using SIMD operations, we can achieve up to a 16x (or 32x) speedup for infinite length strings since we're processing 16 (or 32) characters in a single operation. 
-However, in reality, this optimal speedup isn't always achievable due to overheads associated with SIMD operations.
-It's essential to remember that SIMD operations can sometimes be slower than regular operations depending on the CPU, 
-so performance gains aren't always guaranteed. 
+In theory, using SIMD operations, we can achieve up to a 16x (or 32x) speedup for infinite length strings since we're processing 16 (or 32) characters in a single operation.
+In practice, achieving the optimal speedup from SIMD operations may be hindered by associated overheads. 
+Depending on the CPU, SIMD operations might be slower than regular operations at times, meaning performance gains are uncertain.
 SIMD instructions might be more expensive due to factors such as loading and storing data to and from SIMD registers, 
 potential data alignment issues, or additional instructions required for handling edge cases.
 
@@ -194,7 +193,7 @@ This technique has the advantage of removing branches within the inner loop, fur
 The case without error can run without any branching, optimizing the most common scenario. 
 If an error occurs, we switch to the second case, which includes error handling code.
 
-- Instead of using a full batch rollback for errors in cases of different sizes, locate the error position by counting the number of trailing least significant zero bits
+- Instead of using a full batch rollback for errors in cases with different string sizes, locate the error position by counting the number of trailing least significant zero bits
 
 When handling strings of different sizes, a common error to encounter is an out-of-bounds access.
 A typical approach to handle this error might be to roll back the entire batch of operations, but this can be costly.
@@ -209,6 +208,12 @@ I employ the `_mmX_loadu_siX` instruction to load data into registers, where the
 In scenarios with unequal string lengths, our approach can remain consistent until the first discrepancy is encountered. Beyond this point, only one of the strings can be aligned. While this optimization might slightly reduce performance for shorter strings, it can potentially enhance speed for longer ones.
 It's worth noting that, on my specific CPU, the performance difference between loading aligned and unaligned data is marginal. Given this observation, I opted not to integrate this alignment optimization into the implementation.
 
+- [Possible] Selection of Compiler and Linker
+
+Different compilers generate different assembly code, affecting the overall performance of the SIMD implementation. 
+The choice of compiler and linker can play a critical role in optimizing your code. 
+If you aim to achieve the fastest solution, it is recommended to evaluate and experiment with different compilers and linkers 
+to find the combination that best suits the specific needs and characteristics of your application.
 
 Same size sse implementation:
 ```c++
